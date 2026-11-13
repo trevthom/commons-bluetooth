@@ -1,0 +1,29 @@
+{
+  "name": "commons-bluetooth",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Commons over a Bluetooth LE mesh — offline, serverless, peer to peer.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "ble": "node server.js --transport ble",
+    "mock": "node server.js --transport ble-mock",
+    "build": "esbuild src/entry.jsx --bundle --define:process.env.NODE_ENV='\"production\"' --minify --outfile=public/app.js --loader:.jsx=jsx --jsx=transform --jsx-factory=React.createElement --jsx-fragment=React.Fragment",
+    "build:watch": "esbuild src/entry.jsx --bundle --define:process.env.NODE_ENV='\"production\"' --outfile=public/app.js --loader:.jsx=jsx --jsx=transform --jsx-factory=React.createElement --jsx-fragment=React.Fragment --watch",
+    "test": "node tools/run-all.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "optionalDependencies": {
+    "dbus-next": "^0.10.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "qrcode": "^1.5.4"
+  }
+}
