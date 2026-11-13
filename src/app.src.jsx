@@ -1,164 +1,20 @@
+// The screens: sign-in, the community list, a community's shell, and the small
+// sheets around it (members, nearby devices, settings, usernames). The room
+// itself is chat.jsx, the forum is forum.jsx, and everything shared is core.jsx.
 import * as React from "react";
-import QRCodeLib from "qrcode";
+import {
+  Antenna, api, sget, slistValues, syncRoom, groupKey, copyText, onEnter,
+  loadSession, saveSession, clearSession, SK, Modal, S, CSS, ACCENT,
+} from "./core.jsx";
+import { getSeen, useMutes } from "./media.jsx";
+import { previewOf, GeneralChat } from "./chat.jsx";
+import { Forum, InviteModal, AdminModal } from "./forum.jsx";
 
-const { useState, useEffect, useLayoutEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 const {
-  Users, MapPin, Shield, Send, Eye, EyeOff, Link2, QrCode, Search,
-  X, Trash2, UserMinus, Crown, LogIn, Plus, Copy, Check, MessageSquare, ChevronLeft, Ban, Key, LogOut,
-  MoreVertical, CornerUpLeft, Bell, BellOff, Smile, Pin, PinOff, ChevronDown, Settings, Pencil, ImagePlus, BarChart3
+  Users, MapPin, Shield, Eye, EyeOff, QrCode, Search, Crown, LogIn, Plus, Copy, Check,
+  MessageSquare, ChevronLeft, Key, LogOut, Settings,
 } = lucide;
-
-// The bundled lucide shim has no radio icon, so the nearby panel draws one.
-// It is an inline SVG: no network fetch, which matters for an offline app.
-const Antenna = ({ size = 18, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4.9 19.1a10 10 0 0 1 0-14.2" /><path d="M19.1 4.9a10 10 0 0 1 0 14.2" />
-    <path d="M7.8 16.2a6 6 0 0 1 0-8.4" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4" />
-    <circle cx="12" cy="12" r="1.6" fill={color} stroke="none" />
-  </svg>
-);
-
-// ---------- API ----------
-// Every call resolves to a value or null — a dropped connection or a non-JSON
-// error page must never leave a button stuck in its "busy" state.
-const api = {
-  async post(path, body) { try { const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }); return await r.json(); } catch { return null; } },
-  async get(path) { try { const r = await fetch(path); return await r.json(); } catch { return null; } },
-};
-const sget = async (k) => { const j = await api.get("/api/get?key=" + encodeURIComponent(k)); return j ? j.value : null; };
-const slist = async (prefix) => { const j = await api.get("/api/list?prefix=" + encodeURIComponent(prefix)); return j ? j.keys : []; };
-// ---------- authenticated content calls ----------
-// The server derives the author from { key, sessionId } and ignores anything
-// else we send, so a client can neither forge nor delete somebody else's post.
-const auth = (s, extra) => ({ key: s.key, sessionId: s.sessionId, ...extra });
-// `imageId` claims a picture uploaded earlier with imageUpload, or is null.
-const messageSend = (s, gid, text, anon, replyTo, imageId) => api.post("/api/message/send", auth(s, { gid, text, anon, replyTo, ...(imageId ? { imageId } : {}) }));
-// Upload a prepared picture ({ blob, w, h }) as raw bytes; the credentials ride
-// in headers so they never land in a URL.
-const imageUpload = async (s, gid, prep) => {
-  try {
-    const r = await fetch(`/api/image/upload?w=${prep.w}&h=${prep.h}`, { method: "POST", body: prep.blob, headers: {
-      "Content-Type": prep.blob.type || "application/octet-stream", "X-Commons-Key": s.key, "X-Commons-Session": s.sessionId, "X-Commons-Group": gid } });
-    return await r.json();
-  } catch { return null; }
-};
-const messageDelete = (s, gid, msgKey) => api.post("/api/message/delete", auth(s, { gid, msgKey }));
-const messageEdit = (s, gid, msgKey, text) => api.post("/api/message/edit", auth(s, { gid, msgKey, text }));
-const pollCreate = (s, gid, question, options, multi, replyTo) => api.post("/api/poll/create", auth(s, { gid, question, options, multi, replyTo }));
-const pollVote = (s, gid, msgKey, optionId) => api.post("/api/poll/vote", auth(s, { gid, msgKey, optionId }));
-const messageReact = (s, gid, msgKey, emoji) => api.post("/api/message/react", auth(s, { gid, msgKey, emoji }));
-const messageSearch = (s, gid, q) => api.post("/api/message/search", auth(s, { gid, q }));
-const postCreate = (s, gid, title, text, anon) => api.post("/api/post/create", auth(s, { gid, title, text, anon }));
-const postEdit = (s, gid, postKey, title, text) => api.post("/api/post/edit", auth(s, { gid, postKey, title, text }));
-const postEditReply = (s, gid, postKey, replyId, text) => api.post("/api/post/editReply", auth(s, { gid, postKey, replyId, text }));
-const postDelete = (s, gid, postKey) => api.post("/api/post/delete", auth(s, { gid, postKey }));
-const postReply = (s, gid, postKey, text, anon) => api.post("/api/post/reply", auth(s, { gid, postKey, text, anon }));
-const postDeleteReply = (s, gid, postKey, replyId) => api.post("/api/post/deleteReply", auth(s, { gid, postKey, replyId }));
-const setPin = (s, gid, msgKey, on) => api.post(on ? "/api/group/pin" : "/api/group/unpin", auth(s, { gid, msgKey }));
-// Batch read: fetch every value under a prefix in a single request. Passing
-// `since` (the newest timestamp we already hold) fetches only what is newer —
-// the polling path, which normally transfers nothing instead of the history.
-const slistValues = async (prefix, since) => {
-  const j = await api.get("/api/mget?prefix=" + encodeURIComponent(prefix) + (since ? "&since=" + since : ""));
-  if (!j || !j.items) return [];
-  return j.items.map(([k, v]) => ({ ...v, _key: k }));
-};
-
-// ---------- shared room cache ----------
-// One in-memory copy of each room's history, shared by the community list
-// (previews + unread counts) and the room itself. Opening a room therefore
-// paints instantly from what the list already polled; polls then ask the
-// server only for messages newer than the newest one held, and a full refresh
-// runs occasionally (and after every mutation) so deletions and edits land.
-const roomCache = new Map();   // prefix -> sorted items
-const roomFullAt = new Map();  // prefix -> when the cache was last fully fetched
-const ROOM_FULL_MS = 20000;
-// Cheap identity of a list: its shape plus a hash of edit times, so a poll that
-// changed nothing — not even a reaction — must not re-render the room.
-const sigOf = (list) => {
-  if (!list || !list.length) return "0";
-  let edits = 0;
-  for (const m of list) edits = (edits * 31 + (m.updatedAt || 0)) % 0x7fffffff;
-  return list.length + ":" + list[0]._key + ":" + list[list.length - 1]._key + ":" + edits;
-};
-const mergeItems = (base, delta) => {
-  const byKey = new Map(base.map((m) => [m._key, m]));
-  for (const m of delta) byKey.set(m._key, m);
-  return [...byKey.values()].sort((a, b) => a.ts - b.ts);
-};
-// The newest thing we know about a room: the newest message or a later edit
-// (reactions bump `updatedAt`), whichever is later — the delta cursor.
-const roomCursor = (list) => list.reduce((mx, m) => Math.max(mx, m.ts || 0, m.updatedAt || 0), 0);
-async function syncRoom(prefix, forceFull) {
-  const cached = roomCache.get(prefix) || [];
-  const full = forceFull || !cached.length || Date.now() - (roomFullAt.get(prefix) || 0) > ROOM_FULL_MS;
-  const fetched = await slistValues(prefix, full ? 0 : roomCursor(cached));
-  const next = (full ? fetched : mergeItems(cached, fetched)).sort((a, b) => a.ts - b.ts);
-  roomCache.set(prefix, next);
-  if (full) roomFullAt.set(prefix, Date.now());
-  return next;
-}
-
-// ---------- session storage ----------
-// The session lives in localStorage so an installed PWA (or a closed tab)
-// opens straight back into the same account, and every tab shares one session.
-// Only "Log out" clears it — or the session poll, when the account signs in
-// somewhere else and the server rotates the session id.
-const SK = "cc_session_v2";
-const readSession = (store) => { try { return JSON.parse(store.getItem(SK)) || null; } catch { return null; } };
-const loadSession = () => {
-  try {
-    const local = readSession(localStorage);
-    if (local) return local;
-    // Migrate a tab-scoped session left behind by an older build.
-    const tab = readSession(sessionStorage);
-    if (tab) { localStorage.setItem(SK, JSON.stringify(tab)); sessionStorage.removeItem(SK); return tab; }
-  } catch {}
-  return null;
-};
-const saveSession = (s) => {
-  const v = JSON.stringify(s);
-  try { localStorage.setItem(SK, v); } catch { try { sessionStorage.setItem(SK, v); } catch {} }
-};
-const clearSession = () => { try { localStorage.removeItem(SK); } catch {} try { sessionStorage.removeItem(SK); } catch {} };
-
-const uid = () => Math.random().toString(36).slice(2, 10);
-// clipboard with fallback for non-HTTPS origins (http://192.168.x.x etc.)
-async function copyText(text) {
-  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch {}
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.top = "0";
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    const ok = document.execCommand("copy"); document.body.removeChild(ta); return ok;
-  } catch { return false; }
-}
-const now = () => Date.now();
-const groupKey = (id) => `group:${id}`;
-const msgPrefix = (g) => `msg:${g}:general:`;
-const postPrefix = (g) => `post:${g}:`;
-// Enter should fire a screen's primary button, the way submitting a form does.
-const onEnter = (fn) => (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } };
-
-const ANON_NAMES = ["Maple", "Cedar", "Willow", "Birch", "Aspen", "Sage", "Fern", "Heron", "Otter", "Robin", "Wren", "Lark"];
-// An anonymous name lasts one day (Eastern time): within a community the same
-// person reads as the same "Anon …" all day, and as a different one the next.
-const anonDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
-const anonName = (author, gid, ts) => anonLabel((author || "x") + (gid || "") + anonDayFmt.format(new Date(ts || 0)));
-const anonLabel = (seed) => { let h = 0; for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return "Anon " + ANON_NAMES[h % ANON_NAMES.length] + " " + (h % 90 + 10); };
-
-// ---------- QR ----------
-function QRCodeView({ text, size = 200 }) {
-  const ref = useRef(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    QRCodeLib.toCanvas(el, text, { width: size, margin: 1, color: { dark: "#0b0f14", light: "#e8eef2" } }).catch(() => setFailed(true));
-  }, [text, size]);
-  if (failed) return <div style={{ width: size, fontSize: 12, color: "#7b8a96", textAlign: "center" }}>QR unavailable — use the link below.</div>;
-  return <canvas ref={ref} width={size} height={size} style={{ borderRadius: 12, display: "block" }} />;
-}
 
 // ============================================================
 function CommunityChat() {
@@ -593,3 +449,5 @@ function ChangeNameModal({ session, group, me, onClose, onChanged }) {
     <button style={{ ...S.primary, marginTop: 14, opacity: name.trim() ? 1 : .5 }} disabled={!name.trim() || busy} onClick={submit}>{busy ? "Saving…" : "Save"}</button>
   </Modal>;
 }
+
+window.CommunityChat = CommunityChat;
