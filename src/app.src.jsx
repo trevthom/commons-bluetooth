@@ -3,8 +3,8 @@
 // itself is chat.jsx, the forum is forum.jsx, and everything shared is core.jsx.
 import * as React from "react";
 import {
-  Antenna, api, sget, slistValues, syncRoom, groupKey, copyText, onEnter,
-  loadSession, saveSession, clearSession, SK, Modal, S, CSS, ACCENT,
+  Antenna, api, sget, slistValues, syncRoom, groupKey, msgPrefix, copyText, onEnter,
+  loadSession, saveSession, clearSession, SK, Modal, S, CSS, ACCENT, TEXT,
 } from "./core.jsx";
 import { getSeen, useMutes } from "./media.jsx";
 import { previewOf, GeneralChat } from "./chat.jsx";
