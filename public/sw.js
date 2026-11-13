@@ -3,11 +3,10 @@
 // never cached and always answers from (or waits for) the local process.
 //
 // Bump CACHE whenever the shell changes so installed clients drop the old copy.
-const CACHE = "commons-bluetooth-v2";
+const CACHE = "commons-bluetooth-v3";
 const SHELL = [
   "./", "index.html", "app.js", "lucide.js",
-  "manifest.webmanifest",
-  "icon-192.png", "icon-512.png",
+  "manifest.webmanifest", "icon.svg",
 ];
 
 self.addEventListener("install", (e) => {
