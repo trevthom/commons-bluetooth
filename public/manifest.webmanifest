@@ -1,0 +1,15 @@
+{
+  "name": "Commons-Bluetooth",
+  "short_name": "Commons",
+  "description": "Group and neighborhood chat that travels over a Bluetooth mesh. Offline, no accounts, no servers.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
